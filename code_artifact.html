@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>知識大富翁 - Quiz Monopoly</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti for Win Effect -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0284c7',
+                            600: '#0369a1',
+                            700: '#075985',
+                        }
+                    },
+                    animation: {
+                        'pulse-fast': 'pulse 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'bounce-short': 'bounce 0.5s infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;800;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        /* Monopoly Board Grid Layout */
+        .monopoly-board {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            grid-template-rows: repeat(7, 1fr);
+            gap: 4px;
+            aspect-ratio: 1 / 1;
+            width: 100%;
+            max-width: 700px;
+        }
+
+        /* 3D Dice Simulation */
+        .dice-container {
+            perspective: 600px;
+        }
+        .dice {
+            width: 50px;
+            height: 50px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 1s ease-out;
+        }
+        .dice-face {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: #ffffff;
+            border: 2px solid #333;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: bold;
+            box-shadow: inset 0 0 8px rgba(0,0,0,0.1);
+        }
+        .front  { transform: rotateY(0deg) translateZ(25px); }
+        .back   { transform: rotateY(180deg) translateZ(25px); }
+        .right  { transform: rotateY(90deg) translateZ(25px); }
+        .left   { transform: rotateY(-90deg) translateZ(25px); }
+        .top    { transform: rotateX(90deg) translateZ(25px); }
+        .bottom { transform: rotateX(-90deg) translateZ(25px); }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        /* Player Token Styling */
+        .token {
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            filter: drop-shadow(0px 3px 3px rgba(0,0,0,0.4));
+        }
+
+        /* Glassmorphism Effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-800 min-h-screen flex flex-col items-center justify-between p-2 sm:p-4 overflow-x-hidden">
+
+    <!-- Top Navigation / Title Bar -->
+    <header class="w-full max-w-5xl flex justify-between items-center bg-slate-800 text-white px-4 py-2 rounded-xl mb-2 shadow-lg border border-slate-700">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-graduation-cap text-yellow-400 text-2xl sm:text-3xl"></i>
+            <div>
+                <h1 class="font-extrabold text-lg sm:text-2xl tracking-wide bg-gradient-to-r from-yellow-400 to-amber-200 bg-clip-text text-transparent">知識大富翁</h1>
+                <p class="text-[10px] sm:text-xs text-slate-400">Quiz Monopoly - 答題建霸業</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="sound-btn" onclick="toggleSound()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition" title="開關音效">
+                <i id="sound-icon" class="fa-solid fa-volume-high"></i>
+            </button>
+            <button onclick="showGameSetup()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition" title="重新開始">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Container -->
+    <main class="w-full max-w-5xl flex flex-col lg:flex-row gap-4 items-center lg:items-start justify-center flex-grow">
+        
+        <!-- Left Side / Top: Monopoly Board -->
+        <div class="w-full max-w-[550px] lg:max-w-[620px] bg-slate-800/80 p-3 rounded-2xl shadow-2xl border border-slate-700/80 flex flex-col items-center justify-center relative">
+            
+            <!-- Game Board Grid (24 Cells - Perimeter of 7x7) -->
+            <div id="board" class="monopoly-board bg-slate-900/90 rounded-xl p-1 relative border-2 border-slate-700">
+                
+                <!-- Center Area: Controls, Status & Log -->
+                <div class="col-start-2 col-end-7 row-start-2 row-end-7 bg-slate-800 rounded-lg p-3 flex flex-col justify-between items-center shadow-inner relative overflow-hidden border border-slate-700/50">
+                    
+                    <!-- Top Status Bar in Center -->
+                    <div class="w-full text-center">
+                        <span id="turn-badge" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-slate-900 shadow">
+                            準備開始
+                        </span>
+                        <h2 id="current-player-display" class="text-lg sm:text-xl font-extrabold text-white mt-1">玩家回合</h2>
+                    </div>
+
+                    <!-- Dice & Roll Action Area -->
+                    <div class="flex flex-col items-center gap-2 my-2">
+                        <div class="dice-container py-2">
+                            <div id="dice" class="dice">
+                                <div class="dice-face front text-red-600">1</div>
+                                <div class="dice-face back text-slate-800">6</div>
+                                <div class="dice-face right text-slate-800">3</div>
+                                <div class="dice-face left text-slate-800">4</div>
+                                <div class="dice-face top text-slate-800">2</div>
+                                <div class="dice-face bottom text-slate-800">5</div>
+                            </div>
+                        </div>
+                        <button id="roll-btn" onclick="handleRollDice()" class="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-base sm:text-lg rounded-xl shadow-lg hover:shadow-amber-500/20 active:scale-95 transition transform disabled:opacity-50 disabled:pointer-events-none">
+                            <i class="fa-solid fa-dice mr-1.5"></i> 擲骰子
+                        </button>
+                    </div>
+
+                    <!-- Recent Game Event Log -->
+                    <div class="w-full bg-slate-900/80 rounded-lg p-2 h-20 sm:h-24 overflow-y-auto text-xs text-slate-300 space-y-1 font-mono border border-slate-700/50" id="event-log">
+                        <div class="text-amber-400/80">系統：歡迎來到知識大富翁！請點擊擲骰子開始遊戲。</div>
+                    </div>
+                </div>
+
+                <!-- 24 Board Tiles generated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Right Side / Bottom: Player Information Panel -->
+        <div class="w-full lg:w-80 flex flex-col gap-3">
+            <div class="bg-slate-800/90 rounded-2xl p-4 border border-slate-700 shadow-xl">
+                <h3 class="text-slate-200 font-bold text-sm tracking-wider uppercase mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-users text-amber-400"></i> 玩家狀態 (Player Status)
+                </h3>
+                <div id="players-list" class="space-y-2.5">
+                    <!-- Dynamic Player Cards -->
+                </div>
+            </div>
+
+            <!-- Quick Legend / Rules Mini Box -->
+            <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 text-xs text-slate-400 space-y-1.5">
+                <div class="font-bold text-slate-300 border-b border-slate-700 pb-1 mb-1">圖示說明 (Legend)</div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> 知識格：答對可購買土地/升級</div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500 inline-block"></span> 機會/命運：隨機獲得獎勵或懲罰</div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> 繳稅格：依擁有地產數量支付稅金</div>
+                <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> 休息區：暫停一回合補給</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal 1: Game Setup Modal -->
+    <div id="setup-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-white shadow-2xl relative">
+            <h2 class="text-2xl font-black text-amber-400 text-center mb-1 flex items-center justify-center gap-2">
+                <i class="fa-solid fa-gamepad"></i> 遊戲設定 (Setup)
+            </h2>
+            <p class="text-xs text-slate-400 text-center mb-6">選擇人數與玩家類別開始新局</p>
+
+            <form id="setup-form" onsubmit="startGame(event)" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-300 mb-2">玩家總人數 (2-4人)</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button type="button" onclick="setPlayerCount(2)" id="count-btn-2" class="count-btn py-2 bg-amber-500 text-slate-950 font-bold rounded-lg border-2 border-amber-400">2 人</button>
+                        <button type="button" onclick="setPlayerCount(3)" id="count-btn-3" class="count-btn py-2 bg-slate-700 text-slate-300 font-bold rounded-lg border-2 border-transparent">3 人</button>
+                        <button type="button" onclick="setPlayerCount(4)" id="count-btn-4" class="count-btn py-2 bg-slate-700 text-slate-300 font-bold rounded-lg border-2 border-transparent">4 人</button>
+                    </div>
+                </div>
+
+                <div id="player-config-list" class="space-y-2 mt-4">
+                    <!-- Config options generated dynamically based on selected count -->
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-slate-300 mb-1">獲勝條件 (Win Condition)</label>
+                    <select id="win-condition" class="w-full bg-slate-700 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-amber-400">
+                        <option value="money">資產達到 $5,000 元</option>
+                        <option value="elimination" selected>使其他對手破產</option>
+                        <option value="turns">完成 20 回合後結算資產</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="w-full py-3 mt-4 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl text-lg shadow-lg shadow-amber-500/20 active:scale-98 transition">
+                    開始遊戲 <i class="fa-solid fa-play ml-1"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 2: Quiz Question Modal -->
+    <div id="quiz-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-800 border-2 border-blue-500/80 rounded-2xl max-w-lg w-full p-6 text-white shadow-2xl relative overflow-hidden">
+            
+            <!-- Category & Timer Header -->
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-700">
+                <span id="quiz-category" class="px-3 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/40 rounded-full text-xs font-bold flex items-center gap-1.5">
+                    <i class="fa-solid fa-bookmark"></i> 常識
+                </span>
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-clock text-amber-400"></i>
+                    <span id="quiz-timer" class="font-mono text-xl font-black text-amber-400">15</span>
+                    <span class="text-xs text-slate-400">秒</span>
+                </div>
+            </div>
+
+            <!-- Tile Information Title -->
+            <div class="mb-3">
+                <h4 id="quiz-location-title" class="text-xs font-bold text-slate-400 uppercase tracking-wider">停留在：數學研究所</h4>
+                <h3 id="quiz-question-text" class="text-lg sm:text-xl font-bold text-slate-100 leading-snug mt-1">
+                    題目載入中...
+                </h3>
+            </div>
+
+            <!-- Quiz Options (A, B, C, D) -->
+            <div id="quiz-options" class="space-y-2.5 my-5">
+                <!-- Dynamically generated buttons -->
+            </div>
+
+            <!-- Penalty / Reward Hint Footer -->
+            <div class="bg-slate-900/60 rounded-lg p-2.5 border border-slate-700/50 flex items-center justify-between text-xs text-slate-300">
+                <span><i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> 答對：獲得地產購買權</span>
+                <span><i class="fa-solid fa-circle-xmark text-rose-400 mr-1"></i> 答錯：罰款 $100</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 3: Property Purchase / Upgrade Action Modal -->
+    <div id="property-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-800 border-2 border-amber-500/80 rounded-2xl max-w-md w-full p-6 text-white shadow-2xl text-center">
+            <div class="w-14 h-14 bg-amber-500/20 border border-amber-500/40 text-amber-400 rounded-full flex items-center justify-center text-2xl mx-auto mb-3">
+                <i class="fa-solid fa-building-circle-check"></i>
+            </div>
+            <h3 id="prop-title" class="text-xl font-extrabold text-amber-400">獲得土地購買資格！</h3>
+            <p id="prop-description" class="text-sm text-slate-300 my-2">您答對了問題！現在可以投資此地塊以賺取過路費。</p>
+
+            <div class="bg-slate-900/80 rounded-xl p-3 my-4 border border-slate-700 text-left space-y-1.5 text-xs text-slate-300">
+                <div class="flex justify-between"><span>地產名稱：</span><span id="prop-name" class="font-bold text-white">---</span></div>
+                <div class="flex justify-between"><span>購買/升級費用：</span><span id="prop-cost" class="font-bold text-amber-400">$200</span></div>
+                <div class="flex justify-between"><span>預計過路費：</span><span id="prop-rent" class="font-bold text-emerald-400">$50</span></div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mt-4">
+                <button onclick="confirmPurchaseProperty(false)" class="py-2.5 bg-slate-700 hover:bg-slate-600 font-bold rounded-xl text-slate-200 transition">放棄</button>
+                <button onclick="confirmPurchaseProperty(true)" class="py-2.5 bg-amber-500 hover:bg-amber-400 font-black rounded-xl text-slate-950 transition">購買 / 升級</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 4: Event / Chance Result Modal -->
+    <div id="event-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-5 text-white shadow-2xl text-center">
+            <div id="event-icon-box" class="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-3 bg-purple-500/20 text-purple-400 border border-purple-500/40">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+            </div>
+            <h3 id="event-modal-title" class="text-xl font-extrabold text-white">機會/命運</h3>
+            <p id="event-modal-desc" class="text-sm text-slate-300 my-3 leading-relaxed">事件描述內容...</p>
+            <button onclick="closeEventModal()" class="w-full py-2.5 bg-slate-700 hover:bg-slate-600 font-bold rounded-xl text-white transition">確定</button>
+        </div>
+    </div>
+
+    <!-- Modal 5: Game Over / Victory Modal -->
+    <div id="victory-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-lg flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-800 border-2 border-yellow-500 rounded-2xl max-w-md w-full p-6 text-white shadow-2xl text-center relative overflow-hidden">
+            <div class="text-5xl my-2">🏆</div>
+            <h2 class="text-3xl font-black text-amber-400 tracking-wide">遊戲結束！</h2>
+            <p id="victory-winner-text" class="text-lg font-bold text-slate-200 mt-2">玩家 1 獲得了最終勝利！</p>
+            
+            <div id="victory-stats" class="bg-slate-900/80 rounded-xl p-3 my-4 border border-slate-700 text-xs text-slate-300 space-y-2 text-left">
+                <!-- Stats appended dynamically -->
+            </div>
+
+            <button onclick="showGameSetup()" class="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-lg shadow-lg transition">
+                再玩一局 (Play Again)
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript Game Logic -->
+    <script>
+        /* --- Audio Manager using Web Audio API (No External Sound Files Needed) --- */
+        class SoundManager {
+            constructor() {
+                this.enabled = true;
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                }
+            }
+
+            playBeep(freq = 440, type = 'sine', duration = 0.1, vol = 0.1) {
+                if (!this.enabled) return;
+                this.init();
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.00001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch(e) {}
+            }
+
+            playDiceRoll() {
+                if (!this.enabled) return;
+                let count = 0;
+                const interval = setInterval(() => {
+                    this.playBeep(200 + Math.random() * 300, 'square', 0.05, 0.05);
+                    count++;
+                    if (count >= 6) clearInterval(interval);
+                }, 80);
+            }
+
+            playCorrect() {
+                if (!this.enabled) return;
+                this.playBeep(523.25, 'triangle', 0.12, 0.15); // C5
+                setTimeout(() => this.playBeep(659.25, 'triangle', 0.12, 0.15), 100); // E5
+                setTimeout(() => this.playBeep(783.99, 'triangle', 0.25, 0.15), 200); // G5
+            }
+
+            playWrong() {
+                if (!this.enabled) return;
+                this.playBeep(220, 'sawtooth', 0.15, 0.15);
+                setTimeout(() => this.playBeep(180, 'sawtooth', 0.3, 0.15), 120);
+            }
+
+            playCash() {
+                if (!this.enabled) return;
+                this.playBeep(987.77, 'sine', 0.08, 0.1);
+                setTimeout(() => this.playBeep(1318.51, 'sine', 0.2, 0.12), 80);
+            }
+        }
+
+        const sounds = new SoundManager();
+
+        function toggleSound() {
+            sounds.enabled = !sounds.enabled;
+            const icon = document.getElementById('sound-icon');
+            if (sounds.enabled) {
+                icon.className = 'fa-solid fa-volume-high';
+                sounds.playBeep(600, 'sine', 0.1);
+            } else {
+                icon.className = 'fa-solid fa-volume-xmark text-rose-400';
+            }
+        }
+
+        /* --- Question Bank (Categorized Traditional Chinese Quiz Items) --- */
+        const QUIZ_BANK = [
+            // 常識 General Knowledge
+            { category: "常識", q: "太陽系中體積最大的行星是哪一顆？", options: ["金星", "木星", "土星", "火星"], answer: 1 },
+            { category: "常識", q: "地球上面積最大的大洋是哪一個？", options: ["大西洋", "印度洋", "太平洋", "北極海"], answer: 2 },
+            { category: "常識", q: "彩虹的光譜中，最外圈的顏色通常是什麼色？", options: ["紅色", "紫色", "黃色", "藍色"], answer: 0 },
+            { category: "常識", q: "世界上最長的河流一般被認為是哪一條？", options: ["亞馬遜河", "尼羅河", "長江", "密西西比河"], answer: 1 },
+            { category: "常識", q: "人體最大的解毒器官是哪一個？", options: ["心臟", "胃", "肝臟", "腎臟"], answer: 2 },
+
+            // 科技 Science & Tech
+            { category: "科技", q: "HTTP 協定中，代表「找不到網頁」的標準狀態碼是？", options: ["200", "301", "404", "500"], answer: 2 },
+            { category: "科技", q: "被尊稱為「計算機科學之父」且提出了圖靈測試的科學家是？", options: ["艾倫·圖靈", "馮·紐曼", "比爾·蓋茲", "史蒂夫·賈伯斯"], answer: 0 },
+            { category: "科技", q: "下列哪一種元件是現代智慧型手機中用來感應旋轉與傾斜方向的？", options: ["陀螺儀", "電容屏", "藍牙晶片", "光學鏡頭"], answer: 0 },
+            { category: "科技", q: "HTML 的全名縮寫中，'M' 代表什麼意思？", options: ["Machine", "Markup", "Model", "Media"], answer: 1 },
+            { category: "科技", q: "在人工智慧領域中，「AI」是哪兩個英文單字的縮寫？", options: ["Automated Intelligence", "Artificial Intelligence", "Advanced Integration", "Algorithm Information"], answer: 1 },
+
+            // 歷史文化 History & Culture
+            { category: "歷史文化", q: "台灣最高峰「玉山」在日治時期曾被稱作什麼名稱？", options: ["阿里山", "新高山", "次高山", "太平山"], answer: 1 },
+            { category: "歷史文化", q: "文房四寶指的是「筆、墨、紙」以及下列何者？", options: ["硯", "書", "印", "畫"], answer: 0 },
+            { category: "歷史文化", q: "歐洲文藝復興時期的名畫《蒙娜麗莎》是由哪位藝術家創作的？", options: ["米開朗基羅", "達文西", "梵谷", "畢卡索"], answer: 1 },
+            { category: "歷史文化", q: "古埃及興建金字塔主要作為何種用途？", options: ["天文觀測台", "國王(法老)的陵墓", "祭祀神殿", "軍事堡壘"], answer: 1 },
+
+            // 流行娛樂 Pop Culture
+            { category: "流行娛樂", q: "經典動漫《航海王》中，主角草帽魯夫吃了什麼惡魔果實？", options: ["燒燒果實", "橡膠果實(人化果實)", "震震果實", "冰冰果實"], answer: 1 },
+            { category: "流行娛樂", q: "任天堂知名遊戲角色「瑪利歐」職業設定通常是什麼？", options: ["水電工", "賽車手", "廚師", "建築師"], answer: 0 },
+            { category: "流行娛樂", q: "獲得多項奧斯卡獎的電影《鐵達尼號》男主角是由哪位男星飾演？", options: ["湯姆·克魯斯", "李奧納多·狄卡皮歐", "布萊德·彼特", "強尼·戴普"], answer: 1 },
+
+            // 邏輯趣味 Math & Logic
+            { category: "邏輯趣味", q: "若 1, 1, 2, 3, 5, 8, 13... 這是著名的什麼數列？", options: ["等差數列", "費波那契數列", "幾何級數", "質數數列"], answer: 1 },
+            { category: "邏輯趣味", q: "一個正方體總共有多少個頂點(Vertices)？", options: ["6 個", "8 個", "10 個", "12 個"], answer: 1 },
+            { category: "邏輯趣味", q: "時鐘在 3 點整的時候，時針與分針夾角是多少度？", options: ["45 度", "60 度", "90 度", "120 度"], answer: 2 }
+        ];
+
+        /* --- Board Layout Tiles Configuration (24 Tiles) --- */
+        const BOARD_TILES = [
+            { id: 0, name: "起點", type: "start", icon: "fa-flag-checkered", color: "bg-amber-500", desc: "經過獲得 $200" },
+            { id: 1, name: "資訊科學館", type: "property", cat: "科技", price: 150, rent: 40, icon: "fa-laptop-code", color: "bg-blue-600" },
+            { id: 2, name: "機會命運", type: "chance", icon: "fa-dice", color: "bg-purple-600" },
+            { id: 3, name: "自然歷史館", type: "property", cat: "歷史文化", price: 180, rent: 50, icon: "fa-landmark", color: "bg-emerald-600" },
+            { id: 4, name: "中央稅捐處", type: "tax", icon: "fa-file-invoice-dollar", color: "bg-rose-600", desc: "繳納資產 10% 稅金" },
+            { id: 5, name: "邏輯思維館", type: "property", cat: "邏輯趣味", price: 200, rent: 60, icon: "fa-brain", color: "bg-amber-600" },
+
+            { id: 6, name: "休息區", type: "rest", icon: "fa-bed", color: "bg-teal-600", desc: "暫停休息一回合" },
+            { id: 7, name: "流行音樂館", type: "property", cat: "流行娛樂", price: 220, rent: 70, icon: "fa-music", color: "bg-pink-600" },
+            { id: 8, name: "常識百科館", type: "property", cat: "常識", price: 240, rent: 80, icon: "fa-book-open", color: "bg-indigo-600" },
+            { id: 9, name: "機會命運", type: "chance", icon: "fa-clover", color: "bg-purple-600" },
+            { id: 10, name: "太空科技館", type: "property", cat: "科技", price: 260, rent: 90, icon: "fa-rocket", color: "bg-blue-600" },
+            { id: 11, name: "人文藝術館", type: "property", cat: "歷史文化", price: 280, rent: 100, icon: "fa-palette", color: "bg-emerald-600" },
+
+            { id: 12, name: "知識盛會", type: "event", icon: "fa-champagne-glasses", color: "bg-yellow-600", desc: "所有人領取 $100 獎勵" },
+            { id: 13, name: "數理研究中心", type: "property", cat: "邏輯趣味", price: 300, rent: 110, icon: "fa-calculator", color: "bg-amber-600" },
+            { id: 14, name: "機會命運", type: "chance", icon: "fa-question", color: "bg-purple-600" },
+            { id: 15, name: "影視娛樂城", type: "property", cat: "流行娛樂", price: 320, rent: 120, icon: "fa-film", color: "bg-pink-600" },
+            { id: 16, name: "環境生態館", type: "property", cat: "常識", price: 350, rent: 130, icon: "fa-leaf", color: "bg-indigo-600" },
+            { id: 17, name: "慈善捐贈局", type: "tax", icon: "fa-hand-holding-dollar", color: "bg-rose-600", desc: "強制捐贈 $150" },
+
+            { id: 18, name: "知識補給站", type: "rest", icon: "fa-mug-hot", color: "bg-teal-600", desc: "補充能量獲得 $100" },
+            { id: 19, name: "AI 智育中心", type: "property", cat: "科技", price: 380, rent: 140, icon: "fa-microchip", color: "bg-blue-600" },
+            { id: 20, name: "古文明博物館", type: "property", cat: "歷史文化", price: 400, rent: 150, icon: "fa-monument", color: "bg-emerald-600" },
+            { id: 21, name: "機會命運", type: "chance", icon: "fa-gift", color: "bg-purple-600" },
+            { id: 22, name: "益智遊戲館", type: "property", cat: "邏輯趣味", price: 420, rent: 160, icon: "fa-gamepad", color: "bg-amber-600" },
+            { id: 23, name: "全球世界館", type: "property", cat: "常識", price: 450, rent: 180, icon: "fa-globe", color: "bg-indigo-600" }
+        ];
+
+        /* --- Chance / Event Cards Pool --- */
+        const CHANCE_CARDS = [
+            { text: "榮獲知識競賽冠軍！獲得獎金 $300", money: 300 },
+            { text: "購買參考書籍與資料，支出 $150", money: -150 },
+            { text: "研究計畫獲得國科會補助！獲得 $250", money: 250 },
+            { text: "遺失實驗室設備，賠償 $200", money: -200 },
+            { text: "幸運中發票二獎！獲得 $400", money: 400 },
+            { text: "參加研討會繳納報名費，支出 $100", money: -100 }
+        ];
+
+        /* --- Game State Engine --- */
+        let gameState = {
+            players: [],
+            currentPlayerIndex: 0,
+            properties: {}, // tileId -> { ownerId, level }
+            isRolling: false,
+            winCondition: 'elimination',
+            selectedCount: 2,
+            roundCount: 1,
+            quizTimerInterval: null,
+            currentPendingPropertyTile: null
+        };
+
+        const AVATARS = [
+            { name: "玩家1", icon: "fa-user-ninja", color: "from-blue-500 to-indigo-600", border: "border-blue-400", bgHex: "#3b82f6" },
+            { name: "玩家2", icon: "fa-robot", color: "from-emerald-500 to-teal-600", border: "border-emerald-400", bgHex: "#10b981" },
+            { name: "玩家3", icon: "fa-user-astronaut", color: "from-purple-500 to-pink-600", border: "border-purple-400", bgHex: "#a855f7" },
+            { name: "玩家4", icon: "fa-cat", color: "from-amber-500 to-orange-600", border: "border-amber-400", bgHex: "#f59e0b" }
+        ];
+
+        // Map Board Grid Indexes to 7x7 Perimeter Coordinates
+        function getGridCoordinates(index) {
+            if (index >= 0 && index <= 6) {
+                // Top edge: col 1..7, row 1
+                return { col: index + 1, row: 1 };
+            } else if (index >= 7 && index <= 11) {
+                // Right edge: col 7, row 2..6
+                return { col: 7, row: index - 5 };
+            } else if (index >= 12 && index <= 18) {
+                // Bottom edge: col 7..1, row 7
+                return { col: 19 - index, row: 7 };
+            } else if (index >= 19 && index <= 23) {
+                // Left edge: col 1, row 6..2
+                return { col: 1, row: 25 - index };
+            }
+            return { col: 1, row: 1 };
+        }
+
+        // Initialize Board Tiles in DOM
+        function renderBoard() {
+            const boardEl = document.getElementById('board');
+            // Clear existing tiles except center area
+            const centerEl = boardEl.querySelector('.col-start-2');
+            boardEl.innerHTML = '';
+            boardEl.appendChild(centerEl);
+
+            BOARD_TILES.forEach((tile) => {
+                const coords = getGridCoordinates(tile.id);
+                const tileDiv = document.createElement('div');
+                tileDiv.id = `tile-${tile.id}`;
+                tileDiv.style.gridColumnStart = coords.col;
+                tileDiv.style.gridRowStart = coords.row;
+                
+                tileDiv.className = `relative rounded-lg p-1.5 sm:p-2 flex flex-col justify-between items-center text-center text-white border border-slate-700/80 shadow-md transition-all duration-200 overflow-hidden ${tile.color} bg-opacity-80 hover:bg-opacity-100`;
+
+                tileDiv.innerHTML = `
+                    <div class="w-full flex justify-between items-center text-[10px] sm:text-xs font-bold text-white/90">
+                        <span class="truncate">${tile.name}</span>
+                    </div>
+                    <div class="my-0.5 text-base sm:text-2xl drop-shadow">
+                        <i class="fa-solid ${tile.icon}"></i>
+                    </div>
+                    <div class="w-full text-[9px] sm:text-[11px] bg-slate-950/50 py-0.5 rounded font-mono font-bold text-amber-300 truncate">
+                        ${tile.price ? '$' + tile.price : (tile.desc || '地標')}
+                    </div>
+                    <!-- Owner Ribbon -->
+                    <div id="tile-owner-${tile.id}" class="absolute top-0 right-0 left-0 h-1.5 hidden"></div>
+                    <!-- Player Tokens Holder -->
+                    <div id="tile-tokens-${tile.id}" class="absolute inset-0 flex items-center justify-center gap-1 p-1 pointer-events-none z-10"></div>
+                `;
+
+                boardEl.appendChild(tileDiv);
+            });
+        }
+
+        /* --- Setup Modal Functions --- */
+        function setPlayerCount(count) {
+            gameState.selectedCount = count;
+            [2, 3, 4].forEach(n => {
+                const btn = document.getElementById(`count-btn-${n}`);
+                if (n === count) {
+                    btn.className = "count-btn py-2 bg-amber-500 text-slate-950 font-bold rounded-lg border-2 border-amber-400";
+                } else {
+                    btn.className = "count-btn py-2 bg-slate-700 text-slate-300 font-bold rounded-lg border-2 border-transparent";
+                }
+            });
+            renderPlayerConfigs();
+        }
+
+        function renderPlayerConfigs() {
+            const container = document.getElementById('player-config-list');
+            container.innerHTML = '';
+            for (let i = 0; i < gameState.selectedCount; i++) {
+                const avatar = AVATARS[i];
+                const isHumanDefault = (i === 0);
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "flex items-center justify-between bg-slate-700/60 p-2.5 rounded-lg border border-slate-600";
+                itemDiv.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-r ${avatar.color} flex items-center justify-center text-white text-sm">
+                            <i class="fa-solid ${avatar.icon}"></i>
+                        </div>
+                        <input type="text" id="player-name-${i}" value="${avatar.name}" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white w-24 sm:w-28 focus:outline-none">
+                    </div>
+                    <select id="player-type-${i}" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white">
+                        <option value="human" ${isHumanDefault ? 'selected' : ''}>真人 (Player)</option>
+                        <option value="ai" ${!isHumanDefault ? 'selected' : ''}>電腦 (AI Bot)</option>
+                    </select>
+                `;
+                container.appendChild(itemDiv);
+            }
+        }
+
+        function showGameSetup() {
+            document.getElementById('setup-modal').classList.remove('hidden');
+            document.getElementById('victory-modal').classList.add('hidden');
+            renderPlayerConfigs();
+        }
+
+        function startGame(e) {
+            if (e) e.preventDefault();
+            
+            gameState.players = [];
+            gameState.properties = {};
+            gameState.currentPlayerIndex = 0;
+            gameState.roundCount = 1;
+            gameState.winCondition = document.getElementById('win-condition').value;
+
+            for (let i = 0; i < gameState.selectedCount; i++) {
+                const name = document.getElementById(`player-name-${i}`).value || `玩家 ${i+1}`;
+                const type = document.getElementById(`player-type-${i}`).value;
+                gameState.players.push({
+                    id: i,
+                    name: name,
+                    type: type, // 'human' or 'ai'
+                    money: 1200,
+                    position: 0,
+                    bankrupt: false,
+                    skipTurn: false,
+                    avatar: AVATARS[i]
+                });
+            }
+
+            document.getElementById('setup-modal').classList.add('hidden');
+            renderBoard();
+            updateUI();
+            logEvent("遊戲開始！所有玩家獲得起始資金 $1,200。", "text-amber-400 font-bold");
+            sounds.playCash();
+
+            checkNextTurn();
+        }
+
+        /* --- Player Token Render & Updates --- */
+        function updatePlayerTokens() {
+            BOARD_TILES.forEach(tile => {
+                const holder = document.getElementById(`tile-tokens-${tile.id}`);
+                if (holder) holder.innerHTML = '';
+            });
+
+            gameState.players.forEach(player => {
+                if (player.bankrupt) return;
+                const holder = document.getElementById(`tile-tokens-${player.position}`);
+                if (holder) {
+                    const tokenEl = document.createElement('div');
+                    tokenEl.className = `token w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-gradient-to-r ${player.avatar.color} border-2 ${player.avatar.border} text-white flex items-center justify-center text-xs shadow-lg`;
+                    tokenEl.innerHTML = `<i class="fa-solid ${player.avatar.icon}"></i>`;
+                    tokenEl.title = `${player.name} ($${player.money})`;
+                    holder.appendChild(tokenEl);
+                }
+            });
+        }
+
+        function updateUI() {
+            updatePlayerTokens();
+            updatePlayerListUI();
+            updatePropertiesUI();
+
+            const curPlayer = gameState.players[gameState.currentPlayerIndex];
+            const nameDisp = document.getElementById('current-player-display');
+            const turnBadge = document.getElementById('turn-badge');
+
+            if (curPlayer) {
+                nameDisp.innerText = `${curPlayer.name} 回合`;
+                turnBadge.innerText = curPlayer.type === 'ai' ? '🤖 電腦思考中' : '👤 你的回合';
+                turnBadge.className = curPlayer.type === 'ai' 
+                    ? 'inline-block px-3 py-1 rounded-full text-xs font-bold bg-indigo-500 text-white shadow'
+                    : 'inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-slate-950 shadow';
+            }
+        }
+
+        function updatePlayerListUI() {
+            const listEl = document.getElementById('players-list');
+            listEl.innerHTML = '';
+
+            gameState.players.forEach((p, idx) => {
+                const isCurrent = idx === gameState.currentPlayerIndex && !p.bankrupt;
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border transition-all ${
+                    p.bankrupt ? 'bg-slate-900/40 border-slate-800 opacity-50' : 
+                    isCurrent ? 'bg-slate-700/90 border-amber-400 shadow-md ring-2 ring-amber-400/30' : 'bg-slate-800/80 border-slate-700'
+                }`;
+
+                // Calculate Net Worth
+                let propValue = 0;
+                Object.keys(gameState.properties).forEach(tid => {
+                    if (gameState.properties[tid].ownerId === p.id) {
+                        propValue += BOARD_TILES[tid].price || 0;
+                    }
+                });
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-r ${p.avatar.color} text-white flex items-center justify-center text-sm shadow">
+                                <i class="fa-solid ${p.avatar.icon}"></i>
+                            </div>
+                            <div>
+                                <div class="font-bold text-sm text-white flex items-center gap-1.5">
+                                    ${p.name}
+                                    ${p.type === 'ai' ? '<span class="text-[10px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.2 rounded border border-indigo-500/40">AI</span>' : ''}
+                                    ${p.bankrupt ? '<span class="text-[10px] bg-rose-500/30 text-rose-300 px-1 py-0.2 rounded">破產</span>' : ''}
+                                </div>
+                                <div class="text-[10px] text-slate-400">總地產數：${Object.values(gameState.properties).filter(pr => pr.ownerId === p.id).length} 處</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-mono font-black text-amber-400 text-base">${p.bankrupt ? '$0' : '$' + p.money}</div>
+                            <div class="text-[10px] text-slate-400 font-mono">淨資產: $${p.money + propValue}</div>
+                        </div>
+                    </div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        function updatePropertiesUI() {
+            Object.keys(gameState.properties).forEach(tileId => {
+                const prop = gameState.properties[tileId];
+                const owner = gameState.players[prop.ownerId];
+                const ribbon = document.getElementById(`tile-owner-${tileId}`);
+                if (ribbon && owner) {
+                    ribbon.style.backgroundColor = owner.avatar.bgHex;
+                    ribbon.classList.remove('hidden');
+                    ribbon.title = `擁有者：${owner.name} (等級 ${prop.level})`;
+                }
+            });
+        }
+
+        function logEvent(msg, customClass = "") {
+            const logEl = document.getElementById('event-log');
+            const item = document.createElement('div');
+            item.className = customClass || "text-slate-300";
+            item.innerText = `• ${msg}`;
+            logEl.appendChild(item);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        /* --- Dice Roll Mechanism --- */
+        function handleRollDice() {
+            if (gameState.isRolling) return;
+            const curPlayer = gameState.players[gameState.currentPlayerIndex];
+            if (curPlayer.type === 'ai') return; // Handled automatically
+            executeDiceRoll();
+        }
+
+        function executeDiceRoll() {
+            gameState.isRolling = true;
+            document.getElementById('roll-btn').disabled = true;
+
+            sounds.playDiceRoll();
+            const diceEl = document.getElementById('dice');
+            const diceVal = Math.floor(Math.random() * 6) + 1;
+
+            // 3D rotation animation mapping for values 1-6
+            const rotations = {
+                1: 'rotateX(0deg) rotateY(0deg)',
+                2: 'rotateX(-90deg) rotateY(0deg)',
+                3: 'rotateX(0deg) rotateY(-90deg)',
+                4: 'rotateX(0deg) rotateY(90deg)',
+                5: 'rotateX(90deg) rotateY(0deg)',
+                6: 'rotateX(180deg) rotateY(0deg)'
+            };
+
+            // Random spin extra rotations
+            const randomSpinX = (Math.floor(Math.random() * 3) + 2) * 360;
+            const randomSpinY = (Math.floor(Math.random() * 3) + 2) * 360;
+            
+            diceEl.style.transform = `rotateX(${randomSpinX}deg) rotateY(${randomSpinY}deg)`;
+
+            setTimeout(() => {
+                diceEl.style.transform = rotations[diceVal];
+                setTimeout(() => {
+                    const curPlayer = gameState.players[gameState.currentPlayerIndex];
+                    logEvent(`${curPlayer.name} 擲出了 ${diceVal} 點！`);
+                    movePlayer(curPlayer, diceVal);
+                }, 400);
+            }, 600);
+        }
+
+        /* --- Player Movement & Step Logic --- */
+        function movePlayer(player, steps) {
+            let currentStep = 0;
+            const stepInterval = setInterval(() => {
+                player.position = (player.position + 1) % 24;
+                currentStep++;
+                sounds.playBeep(400 + currentStep * 30, 'sine', 0.05, 0.05);
+
+                // Passed Start Tile Bonus
+                if (player.position === 0) {
+                    player.money += 200;
+                    sounds.playCash();
+                    logEvent(`${player.name} 經過起點，獲得獎勵金 $200！`, "text-emerald-400 font-bold");
+                }
+
+                updateUI();
+
+                if (currentStep >= steps) {
+                    clearInterval(stepInterval);
+                    gameState.isRolling = false;
+                    setTimeout(() => handleTileAction(player), 300);
+                }
+            }, 250);
+        }
+
+        /* --- Tile Landing Event Handler --- */
+        function handleTileAction(player) {
+            const tile = BOARD_TILES[player.position];
+            logEvent(`${player.name} 停留在 [${tile.name}]`);
+
+            switch (tile.type) {
+                case 'start':
+                    finishTurn();
+                    break;
+                case 'property':
+                    handlePropertyTile(player, tile);
+                    break;
+                case 'chance':
+                    triggerChanceCard(player);
+                    break;
+                case 'tax':
+                    handleTaxTile(player, tile);
+                    break;
+                case 'rest':
+                    logEvent(`${player.name} 在 ${tile.name} 休息充電。`);
+                    finishTurn();
+                    break;
+                case 'event':
+                    logEvent(`知識盛會舉行！所有玩家獲得獎金 $100。`, "text-amber-300");
+                    gameState.players.forEach(p => { if (!p.bankrupt) p.money += 100; });
+                    sounds.playCash();
+                    finishTurn();
+                    break;
+            }
+        }
+
+        /* --- Property Tile Action --- */
+        function handlePropertyTile(player, tile) {
+            const propState = gameState.properties[tile.id];
+
+            if (!propState) {
+                // Unowned Property -> Must answer Quiz to earn Purchase Right
+                startQuizForProperty(player, tile);
+            } else if (propState.ownerId === player.id) {
+                // Owned by self -> Can Upgrade Property
+                if (propState.level < 3) {
+                    if (player.type === 'human') {
+                        showPropertyPurchaseModal(tile, true);
+                    } else {
+                        // AI Decision to upgrade
+                        if (player.money >= tile.price) {
+                            player.money -= tile.price;
+                            propState.level += 1;
+                            logEvent(`${player.name} 升級了 [${tile.name}] 至 Level ${propState.level}！`, "text-amber-400");
+                            sounds.playCash();
+                        }
+                        finishTurn();
+                    }
+                } else {
+                    logEvent(`[${tile.name}] 已達最高等級！`);
+                    finishTurn();
+                }
+            } else {
+                // Owned by Enemy -> Pay Rent
+                const owner = gameState.players[propState.ownerId];
+                if (!owner.bankrupt) {
+                    const rentVal = tile.rent * propState.level;
+                    logEvent(`${player.name} 停留在 ${owner.name} 的領地，需支付過路費 $${rentVal}！`, "text-rose-400");
+                    payMoney(player, owner, rentVal);
+                }
+                finishTurn();
+            }
+        }
+
+        /* --- Quiz Core System --- */
+        function startQuizForProperty(player, tile) {
+            // Filter Question by category if available, or random fallback
+            const categoryQuestions = QUIZ_BANK.filter(q => q.category === tile.cat);
+            const question = categoryQuestions.length > 0 
+                ? categoryQuestions[Math.floor(Math.random() * categoryQuestions.length)]
+                : QUIZ_BANK[Math.floor(Math.random() * QUIZ_BANK.length)];
+
+            gameState.currentPendingPropertyTile = tile;
+
+            if (player.type === 'human') {
+                showQuizModal(question, tile);
+            } else {
+                // AI Bot Answering Logic (75% accuracy)
+                const isCorrect = Math.random() < 0.75;
+                logEvent(`🤖 AI ${player.name} 正在回答 [${tile.cat}] 問題...`);
+                setTimeout(() => {
+                    if (isCorrect) {
+                        logEvent(`🤖 AI ${player.name} 答對了問題！`, "text-emerald-400");
+                        if (player.money >= tile.price) {
+                            player.money -= tile.price;
+                            gameState.properties[tile.id] = { ownerId: player.id, level: 1 };
+                            logEvent(`🤖 AI ${player.name} 購買了 [${tile.name}]！`, "text-amber-400");
+                            sounds.playCash();
+                        }
+                    } else {
+                        logEvent(`🤖 AI ${player.name} 答錯了問題，失去購買權利。`, "text-rose-400");
+                        player.money = Math.max(0, player.money - 100);
+                    }
+                    finishTurn();
+                }, 800);
+            }
+        }
+
+        function showQuizModal(q, tile) {
+            const modal = document.getElementById('quiz-modal');
+            document.getElementById('quiz-category').innerHTML = `<i class="fa-solid fa-bookmark"></i> ${q.category}`;
+            document.getElementById('quiz-location-title').innerText = `停留在：${tile.name} (價值 $${tile.price})`;
+            document.getElementById('quiz-question-text').innerText = q.q;
+
+            const optsContainer = document.getElementById('quiz-options');
+            optsContainer.innerHTML = '';
+
+            let timeLeft = 15;
+            document.getElementById('quiz-timer').innerText = timeLeft;
+
+            clearInterval(gameState.quizTimerInterval);
+            gameState.quizTimerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('quiz-timer').innerText = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(gameState.quizTimerInterval);
+                    handleQuizAnswer(-1, q.answer, tile); // Time Out
+                }
+            }, 1000);
+
+            q.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = "w-full py-3 px-4 bg-slate-700 hover:bg-slate-600 border border-slate-600 hover:border-blue-400 rounded-xl text-left text-sm font-semibold transition flex items-center justify-between group";
+                btn.innerHTML = `
+                    <span>${String.fromCharCode(65 + idx)}. ${opt}</span>
+                    <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-blue-400 transition"></i>
+                `;
+                btn.onclick = () => {
+                    clearInterval(gameState.quizTimerInterval);
+                    handleQuizAnswer(idx, q.answer, tile);
+                };
+                optsContainer.appendChild(btn);
+            });
+
+            modal.classList.remove('hidden');
+        }
+
+        function handleQuizAnswer(selectedIdx, correctIdx, tile) {
+            document.getElementById('quiz-modal').classList.add('hidden');
+            const player = gameState.players[gameState.currentPlayerIndex];
+
+            if (selectedIdx === correctIdx) {
+                sounds.playCorrect();
+                logEvent(`恭喜 ${player.name} 答對問題！`, "text-emerald-400 font-bold");
+                showPropertyPurchaseModal(tile, false);
+            } else {
+                sounds.playWrong();
+                const penalty = 100;
+                player.money -= penalty;
+                logEvent(`${player.name} 答錯問題或逾時！遭受罰款 $${penalty}。`, "text-rose-400");
+                checkBankrupt(player);
+                finishTurn();
+            }
+        }
+
+        /* --- Purchase / Upgrade Property UI Modal --- */
+        function showPropertyPurchaseModal(tile, isUpgrade) {
+            const modal = document.getElementById('property-modal');
+            const propState = gameState.properties[tile.id];
+
+            document.getElementById('prop-title').innerText = isUpgrade ? "升級地產投資" : "獲得地產購買資格！";
+            document.getElementById('prop-description').innerText = isUpgrade 
+                ? "您可以升級此地產以提高過路費金額。" 
+                : "您順利答對題目！是否要購買此地塊？";
+
+            document.getElementById('prop-name').innerText = tile.name;
+            document.getElementById('prop-cost').innerText = `$${tile.price}`;
+            
+            const nextLevel = isUpgrade ? propState.level + 1 : 1;
+            document.getElementById('prop-rent').innerText = `$${tile.rent * nextLevel}`;
+
+            modal.classList.remove('hidden');
+        }
+
+        function confirmPurchaseProperty(willBuy) {
+            document.getElementById('property-modal').classList.add('hidden');
+            const player = gameState.players[gameState.currentPlayerIndex];
+            const tile = gameState.currentPendingPropertyTile;
+
+            if (willBuy && tile) {
+                if (player.money >= tile.price) {
+                    player.money -= tile.price;
+                    const existing = gameState.properties[tile.id];
+                    if (existing) {
+                        existing.level += 1;
+                        logEvent(`${player.name} 成功將 [${tile.name}] 升級至 Lv.${existing.level}！`, "text-amber-400 font-bold");
+                    } else {
+                        gameState.properties[tile.id] = { ownerId: player.id, level: 1 };
+                        logEvent(`${player.name} 成功購買了 [${tile.name}]！`, "text-amber-400 font-bold");
+                    }
+                    sounds.playCash();
+                } else {
+                    logEvent(`${player.name} 的現金不足以完成交易！`, "text-rose-400");
+                }
+            } else {
+                logEvent(`${player.name} 放棄了購買/升級地產。`);
+            }
+            finishTurn();
+        }
+
+        /* --- Special Chance / Tax Handling --- */
+        function triggerChanceCard(player) {
+            const card = CHANCE_CARDS[Math.floor(Math.random() * CHANCE_CARDS.length)];
+            document.getElementById('event-modal-title').innerText = "機會 / 命運";
+            document.getElementById('event-modal-desc').innerText = card.text;
+            document.getElementById('event-modal').classList.remove('hidden');
+
+            player.money += card.money;
+            if (card.money >= 0) sounds.playCash(); else sounds.playWrong();
+            logEvent(`[機會命運] ${player.name} : ${card.text}`);
+            checkBankrupt(player);
+        }
+
+        function handleTaxTile(player, tile) {
+            let taxVal = 150;
+            if (tile.id === 4) {
+                taxVal = Math.floor(player.money * 0.1);
+            }
+            logEvent(`${player.name} 繳納稅金/捐款 $${taxVal}。`, "text-rose-400");
+            player.money -= taxVal;
+            sounds.playWrong();
+            checkBankrupt(player);
+            finishTurn();
+        }
+
+        function closeEventModal() {
+            document.getElementById('event-modal').classList.add('hidden');
+            finishTurn();
+        }
+
+        /* --- Economy & Bankruptcy Operations --- */
+        function payMoney(fromPlayer, toPlayer, amount) {
+            if (fromPlayer.money < amount) {
+                toPlayer.money += Math.max(0, fromPlayer.money);
+                fromPlayer.money = 0;
+                checkBankrupt(fromPlayer);
+            } else {
+                fromPlayer.money -= amount;
+                toPlayer.money += amount;
+                sounds.playCash();
+            }
+        }
+
+        function checkBankrupt(player) {
+            if (player.money <= 0) {
+                player.money = 0;
+                player.bankrupt = true;
+                logEvent(`💀 ${player.name} 宣告破產，退出比賽！`, "text-rose-500 font-black");
+
+                // Clear Player Properties
+                Object.keys(gameState.properties).forEach(tid => {
+                    if (gameState.properties[tid].ownerId === player.id) {
+                        delete gameState.properties[tid];
+                    }
+                });
+            }
+        }
+
+        /* --- Turn Progress & Win Conditions --- */
+        function finishTurn() {
+            updateUI();
+            
+            if (checkGameOver()) return;
+
+            // Move to next active player
+            do {
+                gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+                if (gameState.currentPlayerIndex === 0) {
+                    gameState.roundCount++;
+                }
+            } while (gameState.players[gameState.currentPlayerIndex].bankrupt);
+
+            checkNextTurn();
+        }
+
+        function checkNextTurn() {
+            const curPlayer = gameState.players[gameState.currentPlayerIndex];
+            updateUI();
+
+            if (curPlayer.type === 'ai' && !curPlayer.bankrupt) {
+                document.getElementById('roll-btn').disabled = true;
+                setTimeout(() => {
+                    executeDiceRoll();
+                }, 1000);
+            } else {
+                document.getElementById('roll-btn').disabled = false;
+            }
+        }
+
+        function checkGameOver() {
+            const activePlayers = gameState.players.filter(p => !p.bankrupt);
+
+            // Win Condition 1: Elimination
+            if (gameState.winCondition === 'elimination' && activePlayers.length === 1) {
+                triggerVictory(activePlayers[0]);
+                return true;
+            }
+
+            // Win Condition 2: Target Money ($5,000)
+            if (gameState.winCondition === 'money') {
+                const winner = activePlayers.find(p => p.money >= 5000);
+                if (winner) {
+                    triggerVictory(winner);
+                    return true;
+                }
+            }
+
+            // Win Condition 3: Max Rounds (20 Rounds)
+            if (gameState.winCondition === 'turns' && gameState.roundCount > 20) {
+                const sorted = [...activePlayers].sort((a, b) => b.money - a.money);
+                triggerVictory(sorted[0]);
+                return true;
+            }
+
+            return false;
+        }
+
+        function triggerVictory(winner) {
+            sounds.playCorrect();
+            confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+
+            document.getElementById('victory-winner-text').innerText = `🎉 恭喜 ${winner.name} 贏得了最終勝利！`;
+            
+            const statsContainer = document.getElementById('victory-stats');
+            statsContainer.innerHTML = `<div class="font-bold border-b border-slate-700 pb-1 text-slate-200">最終排行榜 (Leaderboard):</div>`;
+            
+            const sortedPlayers = [...gameState.players].sort((a, b) => b.money - a.money);
+            sortedPlayers.forEach((p, idx) => {
+                statsContainer.innerHTML += `
+                    <div class="flex justify-between items-center py-1">
+                        <span>第 ${idx + 1} 名: ${p.name}</span>
+                        <span class="font-mono font-bold text-amber-400">$${p.money}</span>
+                    </div>
+                `;
+            });
+
+            document.getElementById('victory-modal').classList.remove('hidden');
+        }
+
+        // Initialize App on Window Load
+        window.onload = function() {
+            renderBoard();
+            renderPlayerConfigs();
+        };
+    </script>
+</body>
+</html>
